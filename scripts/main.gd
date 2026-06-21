@@ -2,21 +2,35 @@ extends Control
 
 const GameManagerLib := preload("res://scripts/game_manager.gd")
 const PayoffCalculatorLib := preload("res://scripts/payoff_calculator.gd")
+const PayoffConfigLib := preload("res://scripts/payoff_config.gd")
 const StrategyBaseLib := preload("res://scripts/strategy_base.gd")
 
 var manager := GameManagerLib.new()
 var participant_count_input: LineEdit
 var total_rounds_input: LineEdit
-var full_payoff_input: LineEdit
 var auto_delay_input: LineEdit
+var payoff_mode_option: OptionButton
+var full_payoff_input: LineEdit
+var betrayal_cooperator_payoff_input: LineEdit
+var all_defect_payoff_input: LineEdit
+var betrayal_efficiency_input: LineEdit
+var collapse_severity_input: LineEdit
+var min_pool_ratio_input: LineEdit
+var temptation_multiplier_input: LineEdit
+var custom_table_input: LineEdit
+var force_all_coop_best_total_check: CheckBox
+var force_all_defect_zero_check: CheckBox
+var force_defector_above_full_coop_payoff_check: CheckBox
+var payoff_warning_output: TextEdit
 var stats_labels := {}
 var strategy_controls_box: VBoxContainer
 var participant_stats_output: TextEdit
 var history_output: TextEdit
 var payoff_title_label: Label
-var payoff_table_grid: GridContainer
+var payoff_tables_box: VBoxContainer
 var auto_timer: Timer
 var is_refreshing_strategy_controls := false
+var is_building_payoff_ui := false
 
 
 func _ready() -> void:
@@ -78,8 +92,8 @@ func _build_settings_section(root: VBoxContainer) -> void:
 	root.add_child(grid)
 
 	participant_count_input = _add_labeled_input(grid, "参与人数", "10")
+	participant_count_input.text_changed.connect(_on_payoff_config_changed)
 	total_rounds_input = _add_labeled_input(grid, "总模拟轮数", "100")
-	full_payoff_input = _add_labeled_input(grid, "全员合作收益", "10.0")
 	auto_delay_input = _add_labeled_input(grid, "自动运行间隔", "0.25")
 
 	var generate_button := Button.new()
@@ -180,14 +194,82 @@ func _build_history_section(root: VBoxContainer) -> void:
 
 
 func _build_payoff_section(root: VBoxContainer) -> void:
+	is_building_payoff_ui = true
+
 	var title := Label.new()
-	title.text = "收益表"
+	title.text = "收益规则设置"
 	root.add_child(title)
 
-	var payoff_button := Button.new()
-	payoff_button.text = "生成当前人数收益表"
-	payoff_button.pressed.connect(_on_generate_payoff_table_pressed)
-	root.add_child(payoff_button)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(grid)
+
+	var mode_label := Label.new()
+	mode_label.text = "收益模式"
+	grid.add_child(mode_label)
+
+	payoff_mode_option = OptionButton.new()
+	payoff_mode_option.add_item("Original Extreme（原始极端）", PayoffConfigLib.PayoffMode.ORIGINAL_EXTREME)
+	payoff_mode_option.add_item("Linear Decay（线性衰减）", PayoffConfigLib.PayoffMode.LINEAR_DECAY)
+	payoff_mode_option.add_item("Exponential Decay（指数衰减）", PayoffConfigLib.PayoffMode.EXPONENTIAL_DECAY)
+	payoff_mode_option.add_item("Custom Table（自定义表）", PayoffConfigLib.PayoffMode.CUSTOM_TABLE)
+	payoff_mode_option.select(2)
+	payoff_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	payoff_mode_option.item_selected.connect(_on_payoff_config_changed)
+	grid.add_child(payoff_mode_option)
+
+	full_payoff_input = _add_labeled_input(grid, "full_cooperation_payoff", "50.0")
+	betrayal_cooperator_payoff_input = _add_labeled_input(grid, "betrayal_cooperator_payoff", "0.0")
+	all_defect_payoff_input = _add_labeled_input(grid, "all_defect_payoff", "0.0")
+	betrayal_efficiency_input = _add_labeled_input(grid, "betrayal_efficiency", "0.75")
+	collapse_severity_input = _add_labeled_input(grid, "collapse_severity", "1.0")
+	min_pool_ratio_input = _add_labeled_input(grid, "min_pool_ratio", "0.0")
+	temptation_multiplier_input = _add_labeled_input(grid, "temptation_multiplier", "1.5")
+	custom_table_input = _add_labeled_input(grid, "custom_total_pool_ratios", "1.0, 0.9, 0.65, 0.35, 0.1, 0.0")
+
+	for input in [
+		full_payoff_input,
+		betrayal_cooperator_payoff_input,
+		all_defect_payoff_input,
+		betrayal_efficiency_input,
+		collapse_severity_input,
+		min_pool_ratio_input,
+		temptation_multiplier_input,
+		custom_table_input,
+	]:
+		input.text_changed.connect(_on_payoff_config_changed)
+
+	var checks := VBoxContainer.new()
+	checks.add_theme_constant_override("separation", 4)
+	root.add_child(checks)
+
+	force_all_coop_best_total_check = _add_payoff_checkbox(checks, "全员合作总收益必须最高", true)
+	force_all_defect_zero_check = _add_payoff_checkbox(checks, "强制全员背叛收益为 0", true)
+	force_defector_above_full_coop_payoff_check = _add_payoff_checkbox(checks, "要求部分背叛时背叛者每人收益高于 C", false)
+
+	var button_row := HFlowContainer.new()
+	button_row.add_theme_constant_override("separation", 8)
+	root.add_child(button_row)
+
+	var current_payoff_button := Button.new()
+	current_payoff_button.text = "生成当前人数收益表"
+	current_payoff_button.pressed.connect(_on_generate_payoff_table_pressed)
+	button_row.add_child(current_payoff_button)
+
+	var warning_title := Label.new()
+	warning_title.text = "参数警告"
+	root.add_child(warning_title)
+
+	payoff_warning_output = TextEdit.new()
+	payoff_warning_output.editable = false
+	payoff_warning_output.custom_minimum_size = Vector2(0, 86)
+	payoff_warning_output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(payoff_warning_output)
+
+	var table_title := Label.new()
+	table_title.text = "收益表预览"
+	root.add_child(table_title)
 
 	payoff_title_label = Label.new()
 	payoff_title_label.text = "点击“生成当前人数收益表”查看数据"
@@ -199,11 +281,11 @@ func _build_payoff_section(root: VBoxContainer) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	root.add_child(scroll)
 
-	payoff_table_grid = GridContainer.new()
-	payoff_table_grid.columns = 6
-	payoff_table_grid.add_theme_constant_override("h_separation", 14)
-	payoff_table_grid.add_theme_constant_override("v_separation", 6)
-	scroll.add_child(payoff_table_grid)
+	payoff_tables_box = VBoxContainer.new()
+	payoff_tables_box.add_theme_constant_override("separation", 12)
+	scroll.add_child(payoff_tables_box)
+
+	is_building_payoff_ui = false
 
 
 func _add_labeled_input(parent: GridContainer, label_text: String, default_text: String) -> LineEdit:
@@ -219,17 +301,27 @@ func _add_labeled_input(parent: GridContainer, label_text: String, default_text:
 	return input
 
 
+func _add_payoff_checkbox(parent: VBoxContainer, text: String, pressed: bool) -> CheckBox:
+	var checkbox := CheckBox.new()
+	checkbox.text = text
+	checkbox.button_pressed = pressed
+	checkbox.toggled.connect(_on_payoff_config_changed)
+	parent.add_child(checkbox)
+	return checkbox
+
+
 func _on_generate_participants_pressed() -> void:
 	auto_timer.stop()
 	var selected_names := _collect_selected_strategy_names()
 	manager.setup(
 		_read_int(participant_count_input, 10, 1),
 		_read_int(total_rounds_input, 100, 1),
-		_read_float(full_payoff_input, 10.0, 0.0),
+		_read_payoff_config_from_ui(),
 		selected_names
 	)
 	_rebuild_strategy_controls()
 	_refresh_all()
+	_refresh_payoff_preview_current()
 
 
 func _on_start_auto_pressed() -> void:
@@ -258,7 +350,7 @@ func _on_reset_pressed() -> void:
 
 func _on_generate_payoff_table_pressed() -> void:
 	_sync_settings_without_regenerating()
-	_refresh_payoff_table()
+	_refresh_payoff_preview_current()
 
 
 func _on_auto_timer_timeout() -> void:
@@ -276,8 +368,9 @@ func _run_one_step() -> void:
 
 
 func _sync_settings_without_regenerating() -> void:
+	manager.participant_count = _read_int(participant_count_input, manager.participant_count, 1)
 	manager.total_rounds = _read_int(total_rounds_input, manager.total_rounds, 1)
-	manager.full_cooperation_payoff = _read_float(full_payoff_input, manager.full_cooperation_payoff, 0.0)
+	manager.payoff_config = _read_payoff_config_from_ui()
 
 
 func _collect_selected_strategy_names() -> Array[String]:
@@ -331,6 +424,7 @@ func _refresh_all() -> void:
 	_refresh_stats()
 	_refresh_participant_stats()
 	_refresh_history()
+	_refresh_payoff_warnings()
 
 
 func _refresh_stats() -> void:
@@ -380,28 +474,58 @@ func _refresh_history() -> void:
 	history_output.text = "\n".join(lines)
 
 
-func _refresh_payoff_table() -> void:
-	for child in payoff_table_grid.get_children():
+func _on_payoff_config_changed(_value = null) -> void:
+	if is_building_payoff_ui:
+		return
+	_sync_settings_without_regenerating()
+	_refresh_payoff_preview_current()
+	_refresh_payoff_warnings()
+
+
+func _refresh_payoff_preview_current() -> void:
+	_clear_payoff_tables()
+	_render_payoff_table(manager.participant_count)
+	_refresh_payoff_warnings()
+
+
+func _clear_payoff_tables() -> void:
+	for child in payoff_tables_box.get_children():
 		child.queue_free()
+
+
+func _render_payoff_table(count: int) -> void:
+	var title := Label.new()
+	title.text = "%d 人收益表（C = %s，模式 = %s）" % [
+		count,
+		PayoffCalculatorLib.format_amount(manager.payoff_config.full_cooperation_payoff),
+		_get_selected_payoff_mode_name(),
+	]
+	payoff_tables_box.add_child(title)
+
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 6)
+	payoff_tables_box.add_child(grid)
 
 	payoff_title_label.text = "%d 人收益表（全员合作收益 C = %s）" % [
 		manager.participant_count,
-		PayoffCalculatorLib.format_amount(manager.full_cooperation_payoff),
+		PayoffCalculatorLib.format_amount(manager.payoff_config.full_cooperation_payoff),
 	]
 
 	for header in ["总人数", "合作人数", "背叛人数", "合作者每人收益", "背叛者每人收益", "全体总收益"]:
-		_add_payoff_cell(header, true)
+		_add_payoff_cell(grid, header, true)
 
-	for row in manager.build_payoff_table_rows():
-		_add_payoff_cell(str(row["participant_count"]), false)
-		_add_payoff_cell(str(row["cooperators_count"]), false)
-		_add_payoff_cell(str(row["defectors_count"]), false)
-		_add_payoff_cell(str(row["cooperator_each"]), false)
-		_add_payoff_cell(str(row["defector_each"]), false)
-		_add_payoff_cell(str(row["total_payoff"]), false)
+	for row in manager.build_payoff_table_rows_for_count(count):
+		_add_payoff_cell(grid, str(row["participant_count"]), false)
+		_add_payoff_cell(grid, str(row["cooperators_count"]), false)
+		_add_payoff_cell(grid, str(row["defectors_count"]), false)
+		_add_payoff_cell(grid, str(row["cooperator_each"]), false)
+		_add_payoff_cell(grid, str(row["defector_each"]), false)
+		_add_payoff_cell(grid, str(row["total_payoff"]), false)
 
 
-func _add_payoff_cell(text: String, is_header: bool) -> void:
+func _add_payoff_cell(grid: GridContainer, text: String, is_header: bool) -> void:
 	var label := Label.new()
 	label.text = text
 	label.custom_minimum_size = Vector2(116, 28)
@@ -412,7 +536,48 @@ func _add_payoff_cell(text: String, is_header: bool) -> void:
 		label.add_theme_font_size_override("font_size", 15)
 	else:
 		label.add_theme_font_size_override("font_size", 14)
-	payoff_table_grid.add_child(label)
+	grid.add_child(label)
+
+
+func _refresh_payoff_warnings() -> void:
+	if payoff_warning_output == null:
+		return
+	var warnings := manager.validate_payoff_config_for_count(_read_int(participant_count_input, manager.participant_count, 1))
+	payoff_warning_output.text = "\n".join(warnings)
+
+
+func _read_payoff_config_from_ui():
+	var config := PayoffConfigLib.new()
+	config.full_cooperation_payoff = _read_float(full_payoff_input, 50.0, 0.0)
+	config.betrayal_cooperator_payoff = _read_float(betrayal_cooperator_payoff_input, 0.0, -INF)
+	config.all_defect_payoff = _read_float(all_defect_payoff_input, 0.0, -INF)
+	config.payoff_mode = payoff_mode_option.get_selected_id()
+	config.betrayal_efficiency = _read_float(betrayal_efficiency_input, 0.75, 0.0)
+	config.collapse_severity = _read_float(collapse_severity_input, 1.0, 0.0)
+	config.min_pool_ratio = _read_float(min_pool_ratio_input, 0.0, 0.0)
+	config.temptation_multiplier = _read_float(temptation_multiplier_input, 1.5, 0.0)
+	config.force_all_coop_best_total = force_all_coop_best_total_check.button_pressed
+	config.force_all_defect_zero = force_all_defect_zero_check.button_pressed
+	config.force_defector_above_full_coop_payoff = force_defector_above_full_coop_payoff_check.button_pressed
+	config.custom_total_pool_ratios = _parse_custom_ratios(custom_table_input.text)
+	return config
+
+
+func _parse_custom_ratios(text: String) -> Array[float]:
+	var ratios: Array[float] = []
+	for part in text.split(",", false):
+		var trimmed := part.strip_edges()
+		if not trimmed.is_empty():
+			ratios.append(max(0.0, trimmed.to_float()))
+	if ratios.is_empty():
+		ratios = [1.0, 0.9, 0.65, 0.35, 0.1, 0.0]
+	return ratios
+
+
+func _get_selected_payoff_mode_name() -> String:
+	if payoff_mode_option == null:
+		return "-"
+	return payoff_mode_option.get_item_text(payoff_mode_option.selected)
 
 
 func _participant_score_text(participant) -> String:

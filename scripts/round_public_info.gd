@@ -15,5 +15,4 @@ var my_last_payoff: float = 0.0
 var my_total_score: float = 0.0
 var my_cooperation_count: int = 0
 var my_defection_count: int = 0
-var full_cooperation_payoff: float = 10.0
-
+var full_cooperation_payoff: float = 50.0

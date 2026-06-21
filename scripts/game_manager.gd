@@ -5,6 +5,7 @@ const ParticipantLib := preload("res://scripts/participant.gd")
 const RoundPublicInfoLib := preload("res://scripts/round_public_info.gd")
 const RoundResultLib := preload("res://scripts/round_result.gd")
 const PayoffCalculatorLib := preload("res://scripts/payoff_calculator.gd")
+const PayoffConfigLib := preload("res://scripts/payoff_config.gd")
 const StrategyBaseLib := preload("res://scripts/strategy_base.gd")
 const AlwaysCooperateLib := preload("res://scripts/strategies/always_cooperate.gd")
 
@@ -36,7 +37,7 @@ const STRATEGY_SCRIPT_PATHS := {
 
 var participant_count: int = 10
 var total_rounds: int = 100
-var full_cooperation_payoff: float = 10.0
+var payoff_config = PayoffConfigLib.new()
 var current_round: int = 0
 var participants: Array = []
 var history: Array = []
@@ -46,12 +47,13 @@ var last_result = null
 func setup(
 	new_participant_count: int = 10,
 	new_total_rounds: int = 100,
-	new_full_cooperation_payoff: float = 10.0,
+	new_payoff_config = null,
 	selected_strategy_names: Array[String] = []
 ) -> void:
 	participant_count = max(1, new_participant_count)
 	total_rounds = max(1, new_total_rounds)
-	full_cooperation_payoff = max(0.0, new_full_cooperation_payoff)
+	if new_payoff_config != null:
+		payoff_config = new_payoff_config.duplicate_config()
 	current_round = 0
 	history.clear()
 	last_result = null
@@ -89,7 +91,7 @@ func set_strategy_for_participant(index: int, strategy_name: String) -> void:
 
 func step_round():
 	if participants.is_empty():
-		setup(participant_count, total_rounds, full_cooperation_payoff)
+		setup(participant_count, total_rounds, payoff_config)
 	if current_round >= total_rounds:
 		return last_result
 
@@ -98,7 +100,7 @@ func step_round():
 		var public_info = _build_public_info_for(participant)
 		actions.append(participant.decide(public_info))
 
-	var payoffs := PayoffCalculatorLib.calculate_payoffs(actions, full_cooperation_payoff)
+	var payoffs := PayoffCalculatorLib.calculate_payoffs(actions, payoff_config)
 	var cooperators_count := 0
 	var defectors_count := 0
 	var total_payoff := 0.0
@@ -131,11 +133,22 @@ func step_round():
 
 
 func build_payoff_table_text() -> String:
-	return PayoffCalculatorLib.build_payoff_table_for_count(participant_count, full_cooperation_payoff)
+	return PayoffCalculatorLib.build_payoff_table_for_count(participant_count, payoff_config)
 
 
 func build_payoff_table_rows() -> Array:
-	return PayoffCalculatorLib.build_payoff_table_rows_for_count(participant_count, full_cooperation_payoff)
+	return PayoffCalculatorLib.build_payoff_table_rows_for_count(participant_count, payoff_config)
+
+
+func build_payoff_table_rows_for_count(count: int) -> Array:
+	return PayoffCalculatorLib.build_payoff_table_rows_for_count(count, payoff_config)
+
+
+func validate_payoff_config_for_count(count: int = -1) -> Array[String]:
+	var target_count := participant_count
+	if count > 0:
+		target_count = count
+	return PayoffCalculatorLib.validate_payoff_config(target_count, payoff_config)
 
 
 func get_recent_history(limit: int = 20) -> Array:
@@ -190,7 +203,7 @@ func _build_public_info_for(participant):
 	public_info.my_total_score = participant.total_score
 	public_info.my_cooperation_count = participant.cooperation_count
 	public_info.my_defection_count = participant.defection_count
-	public_info.full_cooperation_payoff = full_cooperation_payoff
+	public_info.full_cooperation_payoff = payoff_config.full_cooperation_payoff
 
 	if last_result != null:
 		public_info.last_cooperators_count = last_result.cooperators_count
