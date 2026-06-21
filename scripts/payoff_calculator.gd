@@ -86,10 +86,14 @@ static func build_payoff_table_rows_for_count(participant_count: int, config) ->
 		var cooperators_count := participant_count - defectors_count
 		var cooperator_each := "-"
 		var defector_each := "-"
+		var cooperator_each_value := 0.0
+		var defector_each_value := 0.0
 		if cooperators_count > 0:
-			cooperator_each = format_amount(payoffs[defectors_count])
+			cooperator_each_value = payoffs[defectors_count]
+			cooperator_each = format_amount(cooperator_each_value)
 		if defectors_count > 0:
-			defector_each = format_amount(payoffs[0])
+			defector_each_value = payoffs[0]
+			defector_each = format_amount(defector_each_value)
 
 		var total_payoff := 0.0
 		for payoff in payoffs:
@@ -102,6 +106,9 @@ static func build_payoff_table_rows_for_count(participant_count: int, config) ->
 			"cooperator_each": cooperator_each,
 			"defector_each": defector_each,
 			"total_payoff": format_amount(total_payoff),
+			"cooperator_each_value": cooperator_each_value,
+			"defector_each_value": defector_each_value,
+			"total_payoff_value": total_payoff,
 		})
 	return rows
 

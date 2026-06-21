@@ -3,6 +3,7 @@ extends Control
 const GameManagerLib := preload("res://scripts/game_manager.gd")
 const PayoffCalculatorLib := preload("res://scripts/payoff_calculator.gd")
 const PayoffConfigLib := preload("res://scripts/payoff_config.gd")
+const PayoffCurveChartLib := preload("res://scripts/payoff_curve_chart.gd")
 const StrategyBaseLib := preload("res://scripts/strategy_base.gd")
 
 var manager := GameManagerLib.new()
@@ -28,6 +29,9 @@ var participant_stats_output: RichTextLabel
 var history_output: RichTextLabel
 var payoff_title_label: Label
 var payoff_tables_box: VBoxContainer
+var total_payoff_chart
+var cooperator_payoff_chart
+var defector_payoff_chart
 var auto_timer: Timer
 var is_refreshing_strategy_controls := false
 var is_building_payoff_ui := false
@@ -79,6 +83,7 @@ func _build_ui() -> void:
 
 	_build_settings_section(root)
 	_build_payoff_section(root)
+	_build_curve_charts_section(root)
 	_build_controls_section(root)
 	_build_stats_section(root)
 	_build_strategy_controls_section(root)
@@ -290,6 +295,30 @@ func _build_payoff_section(root: VBoxContainer) -> void:
 	is_building_payoff_ui = false
 
 
+func _build_curve_charts_section(root: VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "收益曲线"
+	root.add_child(title)
+
+	var grid := GridContainer.new()
+	grid.columns = 1
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("v_separation", 8)
+	root.add_child(grid)
+
+	total_payoff_chart = PayoffCurveChartLib.new()
+	total_payoff_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(total_payoff_chart)
+
+	cooperator_payoff_chart = PayoffCurveChartLib.new()
+	cooperator_payoff_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(cooperator_payoff_chart)
+
+	defector_payoff_chart = PayoffCurveChartLib.new()
+	defector_payoff_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(defector_payoff_chart)
+
+
 func _add_labeled_input(parent: GridContainer, label_text: String, default_text: String) -> LineEdit:
 	var label := Label.new()
 	label.text = label_text
@@ -427,6 +456,7 @@ func _refresh_all() -> void:
 	_refresh_participant_stats()
 	_refresh_history()
 	_refresh_payoff_warnings()
+	_refresh_payoff_charts()
 
 
 func _refresh_stats() -> void:
@@ -482,12 +512,14 @@ func _on_payoff_config_changed(_value = null) -> void:
 	_sync_settings_without_regenerating()
 	_refresh_payoff_preview_current()
 	_refresh_payoff_warnings()
+	_refresh_payoff_charts()
 
 
 func _refresh_payoff_preview_current() -> void:
 	_clear_payoff_tables()
 	_render_payoff_table(manager.participant_count)
 	_refresh_payoff_warnings()
+	_refresh_payoff_charts()
 
 
 func _clear_payoff_tables() -> void:
@@ -546,6 +578,36 @@ func _refresh_payoff_warnings() -> void:
 		return
 	var warnings := manager.validate_payoff_config_for_count(_read_int(participant_count_input, manager.participant_count, 1))
 	payoff_warning_output.text = "\n".join(warnings)
+
+
+func _refresh_payoff_charts() -> void:
+	if total_payoff_chart == null:
+		return
+
+	var count: int = max(1, _read_int(participant_count_input, manager.participant_count, 1))
+	var rows: Array = manager.build_payoff_table_rows_for_count(count)
+	var x_values: Array[float] = []
+	var total_values: Array[float] = []
+	var cooperator_values: Array[float] = []
+	var defector_values: Array[float] = []
+
+	for row in rows:
+		var cooperators_count: float = float(row["cooperators_count"])
+		var defectors_count: int = int(row["defectors_count"])
+		x_values.append(cooperators_count)
+		total_values.append(float(row["total_payoff_value"]))
+		if cooperators_count > 0.0:
+			cooperator_values.append(float(row["cooperator_each_value"]))
+		else:
+			cooperator_values.append(0.0)
+		if defectors_count > 0:
+			defector_values.append(float(row["defector_each_value"]))
+		else:
+			defector_values.append(0.0)
+
+	total_payoff_chart.set_data("全体总收益", x_values, total_values, Color(0.4, 0.8, 1.0, 1.0))
+	cooperator_payoff_chart.set_data("合作者每人收益", x_values, cooperator_values, Color(0.45, 0.95, 0.55, 1.0))
+	defector_payoff_chart.set_data("背叛者每人收益", x_values, defector_values, Color(1.0, 0.55, 0.38, 1.0))
 
 
 func _read_payoff_config_from_ui():
