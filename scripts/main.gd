@@ -21,11 +21,11 @@ var custom_table_input: LineEdit
 var force_all_coop_best_total_check: CheckBox
 var force_all_defect_zero_check: CheckBox
 var force_defector_above_full_coop_payoff_check: CheckBox
-var payoff_warning_output: TextEdit
+var payoff_warning_output: RichTextLabel
 var stats_labels := {}
 var strategy_controls_box: VBoxContainer
-var participant_stats_output: TextEdit
-var history_output: TextEdit
+var participant_stats_output: RichTextLabel
+var history_output: RichTextLabel
 var payoff_title_label: Label
 var payoff_tables_box: VBoxContainer
 var auto_timer: Timer
@@ -41,6 +41,11 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+
+	var background := ColorRect.new()
+	background.color = Color(0.23, 0.23, 0.23, 1.0)
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(background)
 
 	auto_timer = Timer.new()
 	auto_timer.one_shot = false
@@ -174,8 +179,7 @@ func _build_participant_stats_section(root: VBoxContainer) -> void:
 	title.text = "参与者列表"
 	root.add_child(title)
 
-	participant_stats_output = TextEdit.new()
-	participant_stats_output.editable = false
+	participant_stats_output = RichTextLabel.new()
 	participant_stats_output.custom_minimum_size = Vector2(0, 220)
 	participant_stats_output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(participant_stats_output)
@@ -186,8 +190,7 @@ func _build_history_section(root: VBoxContainer) -> void:
 	title.text = "最近 20 轮"
 	root.add_child(title)
 
-	history_output = TextEdit.new()
-	history_output.editable = false
+	history_output = RichTextLabel.new()
 	history_output.custom_minimum_size = Vector2(0, 180)
 	history_output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(history_output)
@@ -261,8 +264,7 @@ func _build_payoff_section(root: VBoxContainer) -> void:
 	warning_title.text = "参数警告"
 	root.add_child(warning_title)
 
-	payoff_warning_output = TextEdit.new()
-	payoff_warning_output.editable = false
+	payoff_warning_output = RichTextLabel.new()
 	payoff_warning_output.custom_minimum_size = Vector2(0, 86)
 	payoff_warning_output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(payoff_warning_output)
